@@ -1,14 +1,15 @@
 package com.example.courseschedule.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,13 +23,12 @@ fun WeekViewScreen(
     totalWeeks: Int,
     currentWeek: Int,
     startDate: LocalDate?,
-    themeMode: String,
     onPrevWeek: () -> Unit,
     onNextWeek: () -> Unit,
-    onSaveSettings: (LocalDate, String) -> Unit
+    onOpenSettings: () -> Unit
 ) {
-    var showSettings by remember { mutableStateOf(false) }
     var selectedCourse by remember { mutableStateOf<Course?>(null) }
+    val colors = MaterialTheme.colorScheme
     val today = java.time.LocalDate.now()
     val todayDay = today.dayOfWeek.value // 1=Mon..7=Sun
 
@@ -45,56 +45,59 @@ fun WeekViewScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(colors.background)
+            .statusBarsPadding()
     ) {
         WeekSelector(
             currentWeek = currentWeek,
             totalWeeks = totalWeeks,
             onPrev = onPrevWeek,
             onNext = onNextWeek,
-            onSettings = { showSettings = true }
+            onSettings = onOpenSettings
         )
 
-        DayHeaderRow(todayDay, weekDates)
-
-        Column(
+        // 课表整体放在一张圆角白色卡片里, 浮在浅灰背景上 (iOS 分组风格)
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .fillMaxSize()
+                .padding(horizontal = 10.dp, vertical = 6.dp)
         ) {
-            val timeBlocks = listOf(
-                "1-2" to 1,
-                "3-4" to 3,
-                "5-6" to 5,
-                "7-8" to 7,
-                "9-10" to 9,
-                "11-12" to 11
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(colors.surface)
+            ) {
+                DayHeaderRow(todayDay, weekDates)
 
-            for ((label, slotStart) in timeBlocks) {
-                TimeSlotRow(
-                    timeLabel = label,
-                    slotStart = slotStart,
-                    slotEnd = slotStart + 1,
-                    courses = courses,
-                    todayDay = todayDay,
-                    onCourseClick = { selectedCourse = it }
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    val timeBlocks = listOf(
+                        "1-2" to 1,
+                        "3-4" to 3,
+                        "5-6" to 5,
+                        "7-8" to 7,
+                        "9-10" to 9,
+                        "11-12" to 11
+                    )
+
+                    for ((label, slotStart) in timeBlocks) {
+                        TimeSlotRow(
+                            timeLabel = label,
+                            slotStart = slotStart,
+                            slotEnd = slotStart + 1,
+                            courses = courses,
+                            todayDay = todayDay,
+                            onCourseClick = { selectedCourse = it }
+                        )
+                    }
+                }
             }
         }
-    }
-
-    if (showSettings) {
-        SettingsDialog(
-            currentStartDate = startDate,
-            currentThemeMode = themeMode,
-            onSave = { date, theme ->
-                onSaveSettings(date, theme)
-                showSettings = false
-            },
-            onDismiss = { showSettings = false }
-        )
     }
 
     selectedCourse?.let { course ->
@@ -116,50 +119,59 @@ fun WeekViewScreen(
 
 @Composable
 private fun DayHeaderRow(todayDay: Int, weekDates: List<LocalDate>) {
+    val colors = MaterialTheme.colorScheme
     val monthText = weekDates.firstOrNull()?.let {
         "${it.monthValue}月"
     } ?: ""
 
-    Row(modifier = Modifier.fillMaxWidth().background(Color(0xFFF5F5F5))) {
-        // Top-left: current month
-        Box(
-            modifier = Modifier.width(36.dp).padding(vertical = 8.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(monthText, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF666666))
-        }
-
-        val days = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
-        for ((i, day) in days.withIndex()) {
-            val dayNum = i + 1
-            val isToday = dayNum == todayDay
-            val dateStr = weekDates.getOrNull(i)?.dayOfMonth?.toString() ?: ""
+    Column {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // Top-left: current month
             Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = 6.dp)
-                    .then(if (isToday) Modifier.background(Color(0xFFFFF3E0)) else Modifier),
+                modifier = Modifier.width(36.dp).padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        day,
-                        fontSize = 12.sp,
-                        fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Bold,
-                        color = if (isToday) Color(0xFFE65100) else Color.DarkGray
-                    )
-                    if (dateStr.isNotEmpty()) {
+                Text(
+                    monthText,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.onSurfaceVariant
+                )
+            }
+
+            val days = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+            for ((i, day) in days.withIndex()) {
+                val dayNum = i + 1
+                val isToday = dayNum == todayDay
+                val dateStr = weekDates.getOrNull(i)?.dayOfMonth?.toString() ?: ""
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 8.dp)
+                        .then(if (isToday) Modifier.background(Color(0x26FF9500)) else Modifier),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            dateStr,
-                            fontSize = 10.sp,
-                            color = if (isToday) Color(0xFFE65100) else Color.Gray
+                            day,
+                            fontSize = 12.sp,
+                            fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Bold,
+                            color = if (isToday) Color(0xFFFF9500) else colors.onSurfaceVariant
                         )
+                        if (dateStr.isNotEmpty()) {
+                            Text(
+                                dateStr,
+                                fontSize = 10.sp,
+                                color = if (isToday) Color(0xFFFF9500) else colors.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
         }
+        // 表头下极淡的分隔线
+        HorizontalDivider(thickness = 0.5.dp, color = colors.outlineVariant.copy(alpha = 0.5f))
     }
-    HorizontalDivider(thickness = 1.dp, color = Color.LightGray)
 }
 
 @Composable
@@ -171,20 +183,19 @@ private fun TimeSlotRow(
     todayDay: Int,
     onCourseClick: (Course) -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp)
-            .border(0.5.dp, Color(0xFFEEEEEE))
+            .height(96.dp)
     ) {
         Box(
             modifier = Modifier
                 .width(36.dp)
-                .fillMaxHeight()
-                .background(Color(0xFFFAFAFA)),
+                .fillMaxHeight(),
             contentAlignment = Alignment.Center
         ) {
-            Text(timeLabel, fontSize = 10.sp, color = Color.Gray)
+            Text(timeLabel, fontSize = 10.sp, color = colors.onSurfaceVariant)
         }
 
         for (day in 1..7) {
@@ -200,8 +211,7 @@ private fun TimeSlotRow(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .border(0.5.dp, Color(0xFFEEEEEE))
-                    .then(if (isToday) Modifier.background(Color(0x1AFF9800)) else Modifier)
+                    .then(if (isToday) Modifier.background(Color(0x1AFF9500)) else Modifier)
             ) {
                 if (primary != null) {
                     CourseCell(

@@ -31,6 +31,7 @@ CourseSchedule/
 │       └── ui/                     # Compose 界面组件
 └── tools/
     ├── excel_to_json.py           # Excel(.xlsx) → schedule.json
+    ├── matrix_xls_to_json.py      # 教务系统矩阵式课表(.xls) → schedule.json
     └── pdf_to_json.py             # PDF → schedule.json
 ```
 
@@ -119,6 +120,17 @@ CourseSchedule/
 
 3. **重新构建** — 在 Android Studio 中 Run 或 `./gradlew assembleDebug`。
 
+> **矩阵式课表（教务系统导出）**：如果课表是"行=时间段、列=星期、单元格内含课程信息"的矩阵格式
+> （如 `Java程序设计/(1-2节)1-16周/中心校区 教学楼412/李老师/...`），使用
+> `tools/matrix_xls_to_json.py`：
+> ```bash
+> cd tools
+> pip install xlrd
+> python matrix_xls_to_json.py 你的课表.xls -o ../app/src/main/assets/schedule.json
+> ```
+> 注意：该脚本读取 `.xls` 格式；若学校导出的是 `.xlsx` 但打开报错，通常是内容仍为 `.xls`
+> （扩展名不符），直接传入即可，或用 Excel 另存为 `.xls` 再转换。
+
 ### 方式二：手动编辑 JSON
 
 适用于课表数量不多、或只需微调的情况。
@@ -180,11 +192,30 @@ python pdf_to_json.py 课表.pdf
 | 课程详情 | 点击课程块弹窗显示教师、教室、周次详情 |
 | 今日高亮 | 当天列高亮显示 |
 | 主题切换 | 支持浅色/深色/跟随系统三种模式 |
+| 手机导入课表 | 在手机上直接选择教务系统导出的 `.xls` 文件，自动解析并替换课表（无需电脑） |
+
+## 手机导入课表（推荐）
+
+从教务系统下载新的 `.xls` 课表后，**无需电脑**即可在手机上更新课表：
+
+1. 打开 App，点击顶部「⚙」进入设置
+2. 在设置页点击「📥 导入课表」
+3. 在文件选择器中找到教务系统下载的课表文件（通常在"下载"目录）
+4. 确认弹窗显示解析出的课程数与周数，点击「导入」
+5. 课表立即生效，桌面小组件同步更新
+
+说明：
+- 支持教务系统的矩阵式 `.xls` 课表（行=时间段、列=星期、单元格内为课程信息），
+  也支持 `schedule.json` 格式
+- 导入的课表保存在 App 私有存储中，优先于内置课表；导错了重新导入正确文件即可
+- 内置解析器 `app/src/main/java/com/example/courseschedule/data/XlsReader.kt`
+  为 OLE2/BIFF8 极简实现，无第三方依赖，用真实课表文件进行了单元测试验证
+- 小组件 `CourseWidgetReceiver` 同样读取"导入优先"的课表，自动生效
 
 ## 学期切换
 
 每次新学期只需：
 
-1. 按以上方式更新 `schedule.json`
+1. 按以上方式更新 `schedule.json`，或在手机上直接导入新课表
 2. 在 App 设置中修改学期起始日期（点击课表顶部齿轮图标）
 3. App 会自动根据当前日期和起始日期计算当前周

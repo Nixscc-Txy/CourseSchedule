@@ -1,40 +1,29 @@
 package com.example.courseschedule.data
 
 import android.content.Context
-import com.example.courseschedule.model.Course
-import org.json.JSONArray
-import org.json.JSONObject
+import com.example.courseschedule.model.ScheduleData
 
 object CourseRepository {
 
-    data class ScheduleData(
-        val totalWeeks: Int,
-        val courses: List<Course>
-    )
-
+    /** 优先加载"导入的课表", 没有则回退到内置 assets 课表 */
     fun load(context: Context): ScheduleData {
-        val json = context.assets.open("schedule.json").bufferedReader().use { it.readText() }
-        val obj = JSONObject(json)
-        val totalWeeks = obj.getInt("totalWeeks")
-        val courses = mutableListOf<Course>()
-        val arr = obj.getJSONArray("courses")
-        for (i in 0 until arr.length()) {
-            val c = arr.getJSONObject(i)
-            val weeksArr = c.getJSONArray("weeks")
-            val weeks = (0 until weeksArr.length()).map { weeksArr.getInt(it) }
-            courses.add(
-                Course(
-                    name = c.getString("name"),
-                    teacher = c.optString("teacher", ""),
-                    classroom = c.optString("classroom", ""),
-                    dayOfWeek = c.getInt("dayOfWeek"),
-                    startSlot = c.getInt("startSlot"),
-                    endSlot = c.getInt("endSlot"),
-                    weeks = weeks,
-                    color = c.optString("color", "#B0BEC5")
-                )
-            )
+        val imported = ScheduleImporter.readImported(context)
+        if (imported != null) {
+            return try {
+                JsonScheduleParser.parse(imported)
+            } catch (_: Exception) {
+                loadFromAssets(context)
+            }
         }
-        return ScheduleData(totalWeeks, courses)
+        return loadFromAssets(context)
+    }
+
+    private fun loadFromAssets(context: Context): ScheduleData {
+        return try {
+            val json = context.assets.open("schedule.json").bufferedReader().use { it.readText() }
+            JsonScheduleParser.parse(json)
+        } catch (_: Exception) {
+            ScheduleData(16, emptyList())
+        }
     }
 }
