@@ -16,6 +16,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.courseschedule.data.CourseConflict
+import com.example.courseschedule.model.Course
 import com.example.courseschedule.viewmodel.ScheduleViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -30,11 +32,14 @@ fun SettingsScreen(
     currentStartDate: LocalDate?,
     currentThemeMode: String,
     importSummary: ScheduleViewModel.ImportSummary?,
+    pendingSelectedKeys: Set<String>,
+    isImportReady: Boolean,
     error: String?,
     onSave: (LocalDate, String) -> Unit,
     onBack: () -> Unit,
     onImportFile: (Uri) -> Unit,
     onConfirmImport: () -> Unit,
+    onSelectPendingCourse: (CourseConflict, Course) -> Unit,
     onDismissImport: () -> Unit,
     onErrorShown: () -> Unit
 ) {
@@ -193,13 +198,54 @@ fun SettingsScreen(
             onDismissRequest = onDismissImport,
             title = { Text("确认导入课表", fontWeight = FontWeight.Bold) },
             text = {
-                Text(
-                    "解析成功：共 ${summary.courseCount} 条课程，${summary.totalWeeks} 周。\n" +
-                        "导入后将替换当前课表（桌面小组件也会同步更新），确定吗？"
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("解析成功：共 ${summary.courseCount} 条课程，${summary.totalWeeks} 周。")
+                    if (summary.conflicts.isEmpty()) {
+                        Text("未发现同一时间的多门课程。")
+                    } else {
+                        Text("发现 ${summary.conflicts.size} 组时间冲突，请选择你实际选的课程：")
+                        summary.conflicts.forEach { conflict ->
+                            Text(
+                                "${dayName(conflict.dayOfWeek)} 第${conflict.startSlot}-${conflict.endSlot}节（${conflict.weeks.joinToString(",")}周）",
+                                fontWeight = FontWeight.Bold
+                            )
+                            conflict.courses.forEach { course ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelectPendingCourse(conflict, course) },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = course.selectionKey() in pendingSelectedKeys,
+                                        onClick = { onSelectPendingCourse(conflict, course) }
+                                    )
+                                    Column(modifier = Modifier.padding(start = 4.dp)) {
+                                        Text(course.name)
+                                        Text(
+                                            listOfNotNull(
+                                                course.teacher.takeIf { it.isNotBlank() }?.let { "教师：$it" },
+                                                course.teachingClass.takeIf { it.isNotBlank() }?.let { "教学班：$it" },
+                                                course.classroom.takeIf { it.isNotBlank() }?.let { "教室：$it" }
+                                            ).joinToString("  "),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = isImportReady, onClick = {
                     onConfirmImport()
                     Toast.makeText(context, "课表已更新", Toast.LENGTH_SHORT).show()
                 }) { Text("导入") }
@@ -209,4 +255,9 @@ fun SettingsScreen(
             }
         )
     }
+}
+
+private fun dayName(dayOfWeek: Int): String {
+    return listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+        .getOrElse(dayOfWeek - 1) { "未知日期" }
 }

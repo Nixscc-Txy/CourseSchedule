@@ -20,6 +20,7 @@ object JsonScheduleParser {
                 Course(
                     name = c.getString("name"),
                     teacher = c.optString("teacher", ""),
+                    teachingClass = c.optString("teachingClass", ""),
                     classroom = c.optString("classroom", ""),
                     dayOfWeek = c.getInt("dayOfWeek"),
                     startSlot = c.getInt("startSlot"),
@@ -40,6 +41,7 @@ object JsonScheduleParser {
             val o = JSONObject()
             o.put("name", c.name)
             o.put("teacher", c.teacher)
+            o.put("teachingClass", c.teachingClass)
             o.put("classroom", c.classroom)
             o.put("dayOfWeek", c.dayOfWeek)
             o.put("startSlot", c.startSlot)

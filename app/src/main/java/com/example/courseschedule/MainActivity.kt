@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
             val startDate by vm.startDate.collectAsState()
             val themeMode by vm.themeMode.collectAsState()
             val importSummary by vm.importSummary.collectAsState()
+            val pendingSelectedKeys by vm.pendingSelectedKeys.collectAsState()
             val error by vm.error.collectAsState()
 
             var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -44,6 +45,8 @@ class MainActivity : ComponentActivity() {
                             currentStartDate = startDate,
                             currentThemeMode = themeMode,
                             importSummary = importSummary,
+                            pendingSelectedKeys = pendingSelectedKeys,
+                            isImportReady = vm.isPendingImportReady(),
                             error = error,
                             onSave = { date, mode ->
                                 vm.saveSettings(date, mode)
@@ -52,6 +55,9 @@ class MainActivity : ComponentActivity() {
                             onBack = { showSettings = false },
                             onImportFile = { uri: Uri -> vm.importSchedule(uri) },
                             onConfirmImport = { vm.confirmImport() },
+                            onSelectPendingCourse = { conflict, course ->
+                                vm.selectPendingCourse(conflict, course)
+                            },
                             onDismissImport = { vm.dismissImport() },
                             onErrorShown = { vm.consumeError() }
                         )

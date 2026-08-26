@@ -10,6 +10,7 @@ import com.example.courseschedule.MainActivity
 import com.example.courseschedule.R
 import com.example.courseschedule.data.CourseRepository
 import com.example.courseschedule.data.SettingsManager
+import com.example.courseschedule.data.ScheduleSelection
 import com.example.courseschedule.data.TimeUtils
 import com.example.courseschedule.model.Course
 import java.time.LocalDate
@@ -25,6 +26,13 @@ class CourseWidgetReceiver : AppWidgetProvider() {
     companion object {
         private val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
         private val dayNames = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+        
+        fun refresh(context: Context) {
+            val manager = AppWidgetManager.getInstance(context)
+            val component = android.content.ComponentName(context, CourseWidgetReceiver::class.java)
+            val ids = manager.getAppWidgetIds(component)
+            for (id in ids) updateWidget(context, manager, id)
+        }
 
         private fun updateWidget(context: Context, manager: AppWidgetManager, widgetId: Int) {
             val views = RemoteViews(context.packageName, R.layout.widget_layout)
@@ -36,7 +44,8 @@ class CourseWidgetReceiver : AppWidgetProvider() {
                 val todayDay = today.dayOfWeek.value
                 val now = LocalTime.now()
 
-                val upcoming = schedule.courses
+                val visibleCourses = ScheduleSelection.visibleCourses(context, schedule)
+                val upcoming = visibleCourses
                     .filter { it.dayOfWeek == todayDay && week in it.weeks }
                     .mapNotNull { c ->
                         TimeUtils.getTimeForSlot(c.startSlot, c.endSlot)?.let {
@@ -66,7 +75,7 @@ class CourseWidgetReceiver : AppWidgetProvider() {
                 // Tomorrow early-8 check
                 var tomorrowDay = todayDay + 1
                 if (tomorrowDay > 7) tomorrowDay = 1
-                val hasEarly8 = schedule.courses.any {
+                val hasEarly8 = visibleCourses.any {
                     it.dayOfWeek == tomorrowDay && week in it.weeks && it.startSlot == 1
                 }
                 if (hasEarly8) {

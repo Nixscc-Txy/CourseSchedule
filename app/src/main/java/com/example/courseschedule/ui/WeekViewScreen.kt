@@ -109,6 +109,7 @@ fun WeekViewScreen(
         CourseDetailDialog(
             courseName = course.name,
             teacher = course.teacher,
+            teachingClass = course.teachingClass,
             classroom = course.classroom,
             timeSlot = timeText,
             weeks = weekText,
