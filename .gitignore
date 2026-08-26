@@ -7,6 +7,7 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+.idea/
 .DS_Store
 /build
 /captures
@@ -14,4 +15,7 @@
 .cxx
 local.properties
 .claude
-24级数字媒体技术03班课表(20260804153256928).xls
+*.jks
+*.keystore
+secrets.properties
+.env

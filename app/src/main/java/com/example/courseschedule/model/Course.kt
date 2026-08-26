@@ -3,6 +3,7 @@ package com.example.courseschedule.model
 data class Course(
     val name: String,
     val teacher: String,
+    val teachingClass: String = "",
     val classroom: String,
     val dayOfWeek: Int,      // 1=周一 ... 7=周日
     val startSlot: Int,      // 1-12
@@ -10,4 +11,10 @@ data class Course(
     val weeks: List<Int>,    // 上课周次列表
     val color: String,       // "#RRGGBB"
     val isOnline: Boolean = false
-)
+) {
+    /** Stable identity for choosing one parallel teaching class. */
+    fun selectionKey(): String {
+        val group = teachingClass.ifBlank { classroom }
+        return listOf(name, teacher, group).joinToString("\u001F")
+    }
+}

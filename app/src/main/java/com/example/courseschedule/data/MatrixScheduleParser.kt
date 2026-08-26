@@ -53,6 +53,7 @@ object MatrixScheduleParser {
             Course(
                 name = e.name,
                 teacher = e.teacher,
+                teachingClass = e.teachingClass,
                 classroom = e.classroom,
                 dayOfWeek = e.dayOfWeek,
                 startSlot = e.startSlot,
@@ -126,10 +127,12 @@ object MatrixScheduleParser {
         // 地点: "中心校区 教学楼213" -> "教学楼213"
         val classroom = parts[2].trim().replace(CAMPUS_REGEX, "")
         val teacher = if (parts.size > 3) parts[3].trim() else ""
+        val teachingClass = if (parts.size > 4) parts[4].trim() else ""
 
         return Course(
             name = name,
             teacher = teacher,
+            teachingClass = teachingClass,
             classroom = classroom,
             dayOfWeek = dayOfWeek,
             startSlot = startSlot,

@@ -97,10 +97,12 @@ def parse_entry(text, day_of_week, fallback_slots):
     classroom = re.sub(r'^\S*校区\s*', '', location) if location else ''
 
     teacher = parts[3].strip() if len(parts) > 3 else ''
+    teaching_class = parts[4].strip() if len(parts) > 4 else ''
 
     return {
         "name": name,
         "teacher": teacher,
+        "teachingClass": teaching_class,
         "classroom": classroom,
         "dayOfWeek": day_of_week,
         "startSlot": start_slot,
@@ -141,6 +143,7 @@ def convert(path):
         courses.append({
             "name": e["name"],
             "teacher": e["teacher"],
+            "teachingClass": e["teachingClass"],
             "classroom": e["classroom"],
             "dayOfWeek": e["dayOfWeek"],
             "startSlot": e["startSlot"],

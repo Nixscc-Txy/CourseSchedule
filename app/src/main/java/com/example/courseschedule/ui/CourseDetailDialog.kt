@@ -9,6 +9,7 @@ import androidx.compose.ui.text.font.FontWeight
 fun CourseDetailDialog(
     courseName: String,
     teacher: String,
+    teachingClass: String = "",
     classroom: String,
     timeSlot: String,
     weeks: String,
@@ -23,6 +24,9 @@ fun CourseDetailDialog(
             Column {
                 if (teacher.isNotEmpty()) {
                     Text("教师：$teacher", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (teachingClass.isNotEmpty()) {
+                    Text("教学班：$teachingClass", style = MaterialTheme.typography.bodyMedium)
                 }
                 if (classroom.isNotEmpty()) {
                     Text("教室：$classroom", style = MaterialTheme.typography.bodyMedium)

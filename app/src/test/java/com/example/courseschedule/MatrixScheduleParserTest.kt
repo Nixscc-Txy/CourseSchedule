@@ -41,6 +41,7 @@ class MatrixScheduleParserTest {
         assertTrue(c != null)
         assertEquals("Java程序设计", c!!.name)
         assertEquals("李老师", c.teacher)
+        assertEquals("Java程序设计-0005", c.teachingClass)
         assertEquals("教学楼412", c.classroom) // 去掉"中心校区 "前缀
         assertEquals(2, c.dayOfWeek)
         assertEquals(1, c.startSlot)
