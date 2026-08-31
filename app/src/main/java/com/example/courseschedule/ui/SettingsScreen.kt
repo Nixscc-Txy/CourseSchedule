@@ -89,10 +89,10 @@ fun SettingsScreen(
                 onClick = { filePicker.launch(arrayOf("*/*")) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("📥 导入课表（教务系统 .xls）")
+                Text("📥 导入课表（教务系统 .xls / .xlsx）")
             }
             Text(
-                "从教务系统下载课表文件后点此导入，自动替换当前课表；导错了重新导入正确文件即可。",
+                "从教务系统下载课表文件（Excel/微信发的 .xls 或 .xlsx 均可）后点此导入，自动替换当前课表；导错了重新导入正确文件即可。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -212,7 +212,7 @@ fun SettingsScreen(
                         Text("发现 ${summary.conflicts.size} 组时间冲突，请选择你实际选的课程：")
                         summary.conflicts.forEach { conflict ->
                             Text(
-                                "${dayName(conflict.dayOfWeek)} 第${conflict.startSlot}-${conflict.endSlot}节（${conflict.weeks.joinToString(",")}周）",
+                                "${dayName(conflict.dayOfWeek)} 第${conflict.startSlot}-${conflict.endSlot}节（第${formatWeekRange(conflict.weeks)}周）",
                                 fontWeight = FontWeight.Bold
                             )
                             conflict.courses.forEach { course ->
@@ -260,4 +260,24 @@ fun SettingsScreen(
 private fun dayName(dayOfWeek: Int): String {
     return listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
         .getOrElse(dayOfWeek - 1) { "未知日期" }
+}
+
+/** 周次列表格式化为 "1-8,10-12" 这样的区间表示 */
+private fun formatWeekRange(weeks: List<Int>): String {
+    val sorted = weeks.sorted()
+    if (sorted.isEmpty()) return ""
+    val ranges = mutableListOf<String>()
+    var start = sorted.first()
+    var end = start
+    for (i in 1 until sorted.size) {
+        if (sorted[i] == end + 1) {
+            end = sorted[i]
+        } else {
+            ranges.add(if (start == end) "$start" else "$start-$end")
+            start = sorted[i]
+            end = start
+        }
+    }
+    ranges.add(if (start == end) "$start" else "$start-$end")
+    return ranges.joinToString(",")
 }

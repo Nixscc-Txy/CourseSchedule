@@ -19,6 +19,8 @@ object ScheduleImporter {
         0xA1.toByte(), 0xB1.toByte(), 0x1A.toByte(), 0xE1.toByte()
     )
 
+    private val ZIP_MAGIC = byteArrayOf(0x50, 0x4B, 0x03, 0x04)
+
     private fun isOle2(bytes: ByteArray): Boolean {
         if (bytes.size < OLE2_MAGIC.size) return false
         for (i in OLE2_MAGIC.indices) {
@@ -27,17 +29,28 @@ object ScheduleImporter {
         return true
     }
 
-    /** 解析导入文件: 支持教务系统导出的 .xls 和 schedule.json */
+    private fun isZip(bytes: ByteArray): Boolean {
+        if (bytes.size < ZIP_MAGIC.size) return false
+        for (i in ZIP_MAGIC.indices) {
+            if (bytes[i] != ZIP_MAGIC[i]) return false
+        }
+        return true
+    }
+
+    /** 解析导入文件: 支持教务系统导出的 .xls / .xlsx 和 schedule.json */
     fun parse(bytes: ByteArray): ScheduleData {
         return if (isOle2(bytes)) {
             val grid = XlsReader.readSheetGrid(bytes)
+            MatrixScheduleParser.parse(grid)
+        } else if (isZip(bytes)) {
+            val grid = XlsxReader.readSheetGrid(bytes)
             MatrixScheduleParser.parse(grid)
         } else {
             val text = String(bytes, Charsets.UTF_8).trim().removePrefix("\uFEFF")
             if (text.startsWith("{")) {
                 JsonScheduleParser.parse(text)
             } else {
-                throw IllegalArgumentException("无法识别的文件格式，请选择教务系统导出的 .xls 课表或 schedule.json")
+                throw IllegalArgumentException("无法识别的文件格式，请选择教务系统导出的 .xls/.xlsx 课表或 schedule.json")
             }
         }
     }

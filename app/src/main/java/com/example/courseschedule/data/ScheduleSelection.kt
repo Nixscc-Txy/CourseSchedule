@@ -18,50 +18,91 @@ object ScheduleSelection {
     private const val KEY_SIGNATURE = "schedule_signature"
     private const val KEY_SELECTED_KEYS = "selected_course_keys"
 
+    /**
+     * 找出同一天、节次重叠、且至少有一周重叠的课程组合, 按课程身份合并为冲突组。
+     *
+     * 同一时间段(同一节次窗口)里不同周次的子组合会合并成一个组, 避免同一个物理
+     * 时段被拆成多个"需要重复选择"的弹窗条目; 同一门课的拆条记录(同身份)也只
+     * 会作为一个可选项出现。
+     */
     fun findConflicts(schedule: ScheduleData): List<CourseConflict> {
-        val weeksBySignature = linkedMapOf<String, MutableList<Int>>()
-        val conflictBySignature = linkedMapOf<String, CourseConflict>()
+        val groups = mutableListOf<CourseConflict>()
 
         for (day in 1..7) {
-            for (week in 1..schedule.totalWeeks) {
-                val nodes = schedule.courses
-                    .filter { it.dayOfWeek == day && week in it.weeks }
-                    .groupBy { it.selectionKey() }
-                    .map { (key, courses) -> key to courses }
-                val conflicting = mutableListOf<Pair<Int, Int>>()
+            val dayCourses = schedule.courses.filter { it.dayOfWeek == day }
+            if (dayCourses.size < 2) continue
 
-                for (left in nodes.indices) {
-                    for (right in left + 1 until nodes.size) {
-                        val overlaps = nodes[left].second.any { first ->
-                            nodes[right].second.any { second ->
+            // 1) 按周累计"两个身份在重叠节次"的冲突边: (身份A, 身份B) -> 周次列表
+            val edgeWeeks = linkedMapOf<Pair<String, String>, MutableList<Int>>()
+            for (week in 1..schedule.totalWeeks) {
+                val active = dayCourses.filter { week in it.weeks }.groupBy { it.selectionKey() }
+                val keys = active.keys.toList()
+                for (i in keys.indices) {
+                    for (j in i + 1 until keys.size) {
+                        val a = active.getValue(keys[i])
+                        val b = active.getValue(keys[j])
+                        val overlaps = a.any { first ->
+                            b.any { second ->
                                 first.startSlot <= second.endSlot &&
                                     second.startSlot <= first.endSlot
                             }
                         }
-                        if (overlaps) conflicting.add(left to right)
+                        if (overlaps) {
+                            val edge = if (keys[i] < keys[j]) keys[i] to keys[j] else keys[j] to keys[i]
+                            edgeWeeks.getOrPut(edge) { mutableListOf() }.add(week)
+                        }
                     }
                 }
+            }
+            if (edgeWeeks.isEmpty()) continue
 
-                if (conflicting.isEmpty()) continue
+            // 2) 并查集: 有边的身份连通成一个冲突组 (共享同一物理时段)
+            val parent = HashMap<String, String>()
+            fun find(x: String): String {
+                var v = x
+                while (parent.getOrDefault(v, v) != v) v = parent.getValue(v)
+                return v
+            }
+            fun union(a: String, b: String) {
+                val ra = find(a)
+                val rb = find(b)
+                if (ra != rb) parent[ra] = rb
+            }
+            edgeWeeks.keys.forEach { (a, b) -> union(a, b) }
 
-                val allKeys = conflicting.flatMap { listOf(nodes[it.first].first, nodes[it.second].first) }
-                    .distinct()
-                    .sorted()
-                val courses = allKeys.mapNotNull { key -> nodes.firstOrNull { it.first == key }?.second?.first() }
-                val startSlot = courses.minOf { it.startSlot }
-                val endSlot = courses.maxOf { it.endSlot }
-                val signature = "$day|$startSlot|$endSlot|${allKeys.joinToString("|")}"
-                weeksBySignature.getOrPut(signature) { mutableListOf() }.add(week)
-                conflictBySignature.putIfAbsent(
-                    signature,
-                    CourseConflict(day, startSlot, endSlot, courses, emptyList())
+            // 3) 每个连通分量 -> 一个冲突组
+            val componentWeeks = HashMap<String, MutableList<Int>>() // root -> 全部冲突周
+            val componentKeys = HashMap<String, MutableList<String>>() // root -> 身份列表
+            for ((edge, weeks) in edgeWeeks) {
+                val root = find(edge.first)
+                componentWeeks.getOrPut(root) { mutableListOf() }.addAll(weeks)
+                val keys = componentKeys.getOrPut(root) { mutableListOf() }
+                if (edge.first !in keys) keys.add(edge.first)
+                if (edge.second !in keys) keys.add(edge.second)
+            }
+
+            for ((root, keys) in componentKeys) {
+                val sortedKeys = keys.sorted()
+                // 每个身份取一个代表记录 (同一天可能有多条同身份记录)
+                val entries = dayCourses.groupBy { it.selectionKey() }
+                val courses = sortedKeys.mapNotNull { key ->
+                    entries[key]?.first()
+                }
+                if (courses.size < 2) continue
+                val weeks = componentWeeks.getValue(root).distinct().sorted()
+                groups.add(
+                    CourseConflict(
+                        dayOfWeek = day,
+                        startSlot = courses.minOf { it.startSlot },
+                        endSlot = courses.maxOf { it.endSlot },
+                        courses = courses,
+                        weeks = weeks
+                    )
                 )
             }
         }
 
-        return conflictBySignature.map { (signature, conflict) ->
-            conflict.copy(weeks = weeksBySignature.getValue(signature).distinct().sorted())
-        }.sortedWith(compareBy({ it.dayOfWeek }, { it.startSlot }))
+        return groups.sortedWith(compareBy({ it.dayOfWeek }, { it.startSlot }, { it.courses.first().name }))
     }
 
     fun visibleCourses(context: Context, schedule: ScheduleData): List<Course> {
