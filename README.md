@@ -16,35 +16,46 @@
 
 ```
 CourseSchedule/
-├── app/src/main/
-│   ├── assets/
-│   │   └── schedule.json          # ★ 课表数据（唯一数据源）
-│   └── java/com/example/courseschedule/
-│       ├── model/
-│       │   └── Course.kt          # 课程数据模型
-│       ├── data/
-│       │   ├── CourseRepository.kt # 从 JSON 加载课表（导入优先，回落到内置 assets）
-│       │   ├── ScheduleImporter.kt  # 识别文件格式 / 保存 / 清除导入的课表
-│       │   ├── ScheduleSelection.kt # 冲突识别、冲突簇合并、选课结果存取
-│       │   ├── SettingsManager.kt  # 学期起始日/主题偏好
-│       │   └── TimeUtils.kt       # 上课时间定义（周视图与小组件共用）
-│       ├── viewmodel/
-│       │   └── ScheduleViewModel.kt
-│       └── ui/                     # Compose 界面组件
-│           └── CourseSelectionDialog.kt # 平行选修选择弹窗（导入确认 / 事后补选共用）
-└── tools/
-    ├── excel_to_json.py           # Excel(.xlsx) → schedule.json
-    ├── matrix_xls_to_json.py      # 教务系统矩阵式课表(.xls) → schedule.json
-    └── pdf_to_json.py             # PDF → schedule.json
+├── app/src/
+│   ├── main/
+│   │   ├── assets/schedule.json      # 内置课表。出厂 courses 为空数组，用户导入的课表优先于此
+│   │   ├── java/com/example/courseschedule/
+│   │   │   ├── model/                # Course.kt / ScheduleData.kt
+│   │   │   ├── data/
+│   │   │   │   ├── CourseRepository.kt     # 加载课表（导入的文件优先，回落到内置 assets）
+│   │   │   │   ├── ScheduleImporter.kt     # 识别文件格式 / 保存 / 清除导入的课表
+│   │   │   │   ├── ScheduleSelection.kt    # 冲突识别、冲突簇合并、选课结果存取
+│   │   │   │   ├── SettingsManager.kt      # 学期起始日 / 主题偏好
+│   │   │   │   ├── TimeUtils.kt            # 作息时间表（周视图与小组件共用同一份定义）
+│   │   │   │   ├── JsonScheduleParser.kt   # schedule.json 解析
+│   │   │   │   ├── MatrixScheduleParser.kt # 教务矩阵式课表解析
+│   │   │   │   ├── XlsReader.kt            # OLE2/BIFF8 极简读取（无第三方依赖）
+│   │   │   │   └── XlsxReader.kt           # xlsx（ZIP + XML）读取
+│   │   │   ├── viewmodel/ScheduleViewModel.kt
+│   │   │   ├── ui/                   # Compose 界面：周视图、设置页、选择弹窗、主题
+│   │   │   └── widget/               # 桌面小组件
+│   │   └── res/                      # 图标、主题、布局、备份规则
+│   └── test/                         # 单元测试（含一份教务导出格式的 .xls 固件，课程与教师均已化名）
+├── tools/                            # 电脑端转换脚本（App 运行不需要）
+└── design/                           # 应用图标源文件
 ```
+
+> 注意区分两个名字：`applicationId` 是 `com.CourseSchedule.courseschedule`（手机上的应用标识、也是覆盖安装的依据），
+> 而 Kotlin 代码里的 `namespace` 仍是 `com.example.courseschedule`（内部包路径，用户看不到，改它要动所有源文件，收益为零）。
 
 ## 课表数据格式
 
-所有课程数据存储在 **`app/src/main/assets/schedule.json`**，结构如下：
+课程数据有两个来源，**导入的优先**：
+
+1. **用户导入的课表** — 存在 App 私有目录 `files/imported_schedule.json`，在手机上通过「导入课表」写入
+2. **内置课表** — `app/src/main/assets/schedule.json`，**出厂是空的**（`courses` 为空数组），
+   只有开发时想把课表预置进 APK 才需要动它
+
+两者的 JSON 结构相同：
 
 ```json
 {
-  "totalWeeks": 19,
+  "totalWeeks": 16,
   "courses": [
     {
       "name": "课程名称",
@@ -91,9 +102,15 @@ CourseSchedule/
 
 ## 如何更换课表
 
-更换课表只需替换一个文件：**`app/src/main/assets/schedule.json`**，然后重新构建运行即可。无需修改任何 Kotlin 代码。
+**日常使用推荐在手机上直接导入** —— 见下方[手机导入课表](#手机导入课表推荐)，不需要电脑。
 
-以下提供三种方式，根据你的课表格式选择。
+下面三种方式是在**电脑上生成 `schedule.json`**，适合开发者、或课表格式比较特殊需要先转换的情况。
+生成后有两种用法：
+
+- 在手机上把这个 `schedule.json` 当作课表文件导入（App 同样支持）
+- 或者替换 `app/src/main/assets/schedule.json` 后重新构建，把它预置进 APK
+
+以下按你的课表格式选一种。
 
 ### 方式一：从学校 Excel 导出（通用方法）
 
