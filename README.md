@@ -104,7 +104,7 @@ CourseSchedule/
 
 **日常使用推荐在手机上直接导入** —— 见下方[手机导入课表](#手机导入课表推荐)，不需要电脑。
 
-下面三种方式是在**电脑上生成 `schedule.json`**，适合开发者、或课表格式比较特殊需要先转换的情况。
+下面两种方式是在**电脑上生成 `schedule.json`**，适合开发者、或课表格式比较特殊需要先转换的情况。
 生成后有两种用法：
 
 - 在手机上把这个 `schedule.json` 当作课表文件导入（App 同样支持）
@@ -112,9 +112,17 @@ CourseSchedule/
 
 以下按你的课表格式选一种。
 
-### 方式一：从学校 Excel 导出（通用方法）
+> 早期还有一个 `tools/pdf_to_json.py`（PDF 课表转换），因为 PDF 排版差异太大、提取结果不可靠，已移除。
+> 如果学校只给 PDF，建议用 Excel 打开另存为 `.xlsx` 再走方式一。
 
-适用于学校系统导出的 `.xls` / `.xlsx` 课表文件。
+### 方式一：从 Excel 导出（通用方法）
+
+适用于列式课表（一行一门课，有独立的星期/节次/周次列）。
+
+> ⚠️ 只支持**新版 `.xlsx`** —— `excel_to_json.py` 用的 openpyxl 读不了旧版 `.xls`。
+> 如果学校导出的是 `.xls`，用下面的矩阵式脚本，或先用 Excel 另存为 `.xlsx`。
+
+**前置：** `pip install openpyxl`
 
 **步骤：**
 
@@ -176,18 +184,6 @@ CourseSchedule/
 - 同一课程在不同周上课地点不同，拆成多条记录（仅 `weeks` 和 `classroom` 不同）
 - 冲突识别以「课程名 + 教师 + 教室」（`teachingClass` 仅用于显示）区分不同教学班：导入班级课表后，App 会在确认弹窗中要求选择实际选修的课程；同一门课因周次拆成多条记录时只作为一个选项
 - 颜色建议使用柔和色（如 `#A3D8F6`、`#FFDAB9`），每组同一课程使用相同颜色
-
-### 方式三：从 PDF 导出
-
-如果有 PDF 格式的课表，可使用 `tools/pdf_to_json.py`：
-
-```bash
-cd tools
-pip install pdfplumber
-python pdf_to_json.py 课表.pdf
-```
-
-> PDF 解析受排版影响较大，建议优先使用 Excel 方式。
 
 ---
 
