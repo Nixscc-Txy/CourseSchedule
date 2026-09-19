@@ -1,13 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
--->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 30 及以下的备份规则 (API 31+ 见 data_extraction_rules.xml) -->
 <full-backup-content>
     <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+      App 的数据很少: 导入的课表、选课结果、学期起始日/主题设置。
+      全部参与云备份, 换机时能自动恢复。这里显式写出来, 不依赖"默认全备"的隐式行为。
+    -->
+    <include domain="sharedpref" path="." />
+    <include domain="file" path="." />
 </full-backup-content>

@@ -17,5 +17,6 @@ local.properties
 .claude
 *.jks
 *.keystore
+keystore.properties
 secrets.properties
 .env

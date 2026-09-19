@@ -23,12 +23,15 @@ CourseSchedule/
 │       ├── model/
 │       │   └── Course.kt          # 课程数据模型
 │       ├── data/
-│       │   ├── CourseRepository.kt # 从 JSON 加载课表
+│       │   ├── CourseRepository.kt # 从 JSON 加载课表（导入优先，回落到内置 assets）
+│       │   ├── ScheduleImporter.kt  # 识别文件格式 / 保存 / 清除导入的课表
+│       │   ├── ScheduleSelection.kt # 冲突识别、冲突簇合并、选课结果存取
 │       │   ├── SettingsManager.kt  # 学期起始日/主题偏好
-│       │   └── TimeUtils.kt       # 上课时间定义
+│       │   └── TimeUtils.kt       # 上课时间定义（周视图与小组件共用）
 │       ├── viewmodel/
 │       │   └── ScheduleViewModel.kt
 │       └── ui/                     # Compose 界面组件
+│           └── CourseSelectionDialog.kt # 平行选修选择弹窗（导入确认 / 事后补选共用）
 └── tools/
     ├── excel_to_json.py           # Excel(.xlsx) → schedule.json
     ├── matrix_xls_to_json.py      # 教务系统矩阵式课表(.xls) → schedule.json
@@ -183,17 +186,57 @@ python pdf_to_json.py 课表.pdf
 
 或在 Android Studio 中打开项目直接 Run。
 
+### 发布构建（签名）
+
+发布包用仓库根目录的 `release.jks` 签名，密码放在根目录的 `keystore.properties`（已被 `.gitignore` 忽略）：
+
+```properties
+storeFile=release.jks
+storePassword=***
+keyAlias=courseschedule
+keyPassword=***
+```
+
+```bash
+./gradlew clean test assembleRelease
+```
+
+产物：`app/build/outputs/apk/release/app-release.apk`（release 已开启 R8 代码压缩和资源压缩）。
+缺了 `keystore.properties` 时构建会产出未签名的 `app-release-unsigned.apk`，装不上。
+
+验证签名：
+
+```bash
+$ANDROID_HOME/build-tools/<版本>/apksigner verify --print-certs \
+  app/build/outputs/apk/release/app-release.apk
+```
+
+> ⚠️ **`release.jks` 和它的密码必须单独备份。** 同一个应用只有用同一把钥匙签名才能覆盖安装升级；
+> 钥匙丢了，用户必须先卸载再装新版，而卸载会丢掉他导入的课表和设置。
+> 每次发新版记得把 `versionCode` 加一，否则新包装不上去。
+
+## 首次使用
+
+App **出厂是空课表**（`app/src/main/assets/schedule.json` 里 `courses` 为空数组），第一次打开会显示
+「还没有课表」引导页，点「去导入课表」导入教务系统导出的文件即可。
+
 ## 功能说明
 
 | 功能 | 说明 |
 |------|------|
-| 按周切换 | 左右箭头切换周次，自动筛选当前周课程 |
-| 自动定位 | 设置学期起始日期后，自动跳转到当前周 |
-| 课程详情 | 点击课程块弹窗显示教师、教室、周次详情 |
+| 按周切换 | 左右箭头切换周次，自动筛选当前周课程（首尾周自动禁用对应箭头） |
+| 回到本周 | 翻到别的周后，周次栏下方出现「⤴ 回到本周（第 N 周）」，一键跳回；停在本周时显示「本周」标记 |
+| 自动定位 | 设置学期起始日期后，自动跳转到当前周；未设置时课表上方给出提示和「去设置」入口 |
+| 上课时间 | 周视图左侧同时显示节次和实际时间（`1-2` / `08:30`），课程详情里也带 `08:30-10:05` |
+| 课程详情 | 点击课程块弹窗显示教师、教学班、教室、时间、周次详情 |
 | 今日高亮 | 当天列高亮显示 |
-| 主题切换 | 支持浅色/深色/跟随系统三种模式 |
-| 手机导入课表 | 在手机上直接选择教务系统导出的 `.xls` 文件，自动解析并替换课表（无需电脑） |
-| 冲突课程选择 | 导入班级课表时选择实际选修的英语、日语等教学班，主课表和桌面小组件同步使用选择结果 |
+| 主题切换 | 支持浅色/深色/跟随系统三种模式；状态栏图标跟随 App 内主题，深色模式冷启动不白闪 |
+| 手机导入课表 | 在手机上直接选择教务系统导出的 `.xls` / `.xlsx` 文件，自动解析并替换课表（无需电脑） |
+| 冲突课程选择 | 班级课表里同一时段开着多门平行的选修课时，弹窗让用户挑出自己实际要上的那门（也可以选「这组我都不上」）；可选项相同的多个时段自动合并成一个问题，只回答一次 |
+| 冲突提示 | 课表里还有没解决的时间冲突时，课表上方显示「有 N 处时间冲突还没选」，点「去选择」直接补选，不需要重新导入文件 |
+| 同格多门课 | 未解决冲突时，同一格里的多门课**全部显示**、各自可点，而不是只显示第一门 |
+| 清空课表 | 设置页「🗑 清空课表」，删掉已导入的课表和选课结果，课表变为空白（有二次确认） |
+| 桌面小组件 | 显示今日剩余课程和「明天有早八」提醒；跨午夜由闹钟自动刷新，不依赖系统最长 30 分钟的更新周期 |
 
 ## 手机导入课表（推荐）
 

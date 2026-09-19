@@ -65,4 +65,9 @@ object ScheduleImporter {
         val f = importedFile(context)
         return if (f.exists()) f.readText() else null
     }
+
+    /** 删掉导入的课表, 之后回落到内置课表 */
+    fun clear(context: Context) {
+        importedFile(context).delete()
+    }
 }

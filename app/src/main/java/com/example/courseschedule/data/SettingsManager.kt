@@ -21,8 +21,13 @@ object SettingsManager {
     }
 
     fun getCurrentWeek(context: Context, totalWeeks: Int): Int {
+        return getWeekFor(context, LocalDate.now(), totalWeeks)
+    }
+
+    /** 指定日期落在第几周 (小组件算"明天"的课表时也用它) */
+    fun getWeekFor(context: Context, date: LocalDate, totalWeeks: Int): Int {
         val start = getStartDate(context) ?: return 1
-        val days = ChronoUnit.DAYS.between(start, LocalDate.now())
+        val days = ChronoUnit.DAYS.between(start, date)
         return ((days / 7).toInt() + 1).coerceIn(1, totalWeeks)
     }
 

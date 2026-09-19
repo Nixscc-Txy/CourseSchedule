@@ -13,6 +13,19 @@ data class CourseConflict(
     val weeks: List<Int>
 )
 
+/** 冲突涉及的某一个时段 */
+data class ConflictSlot(val dayOfWeek: Int, val startSlot: Int, val endSlot: Int)
+
+/**
+ * 需要用户回答一次的一组平行选修课: 从其中选一门, 或者一门都不选。
+ * [slots] 可能包含多个时段 (如周三 7-8 节和周五 1-2 节开的是同一批课)。
+ */
+data class ConflictCluster(
+    val courses: List<Course>,
+    val slots: List<ConflictSlot>,
+    val weeks: List<Int>
+)
+
 object ScheduleSelection {
     private const val PREFS_NAME = "schedule_selection"
     private const val KEY_SIGNATURE = "schedule_signature"
@@ -105,6 +118,60 @@ object ScheduleSelection {
         return groups.sortedWith(compareBy({ it.dayOfWeek }, { it.startSlot }, { it.courses.first().name }))
     }
 
+    /**
+     * 把 [findConflicts] 的结果按"共享同一门课"合并成若干独立的冲突簇。
+     *
+     * 班级课表里平行的选修(如英语/日语, 或本例的 HTML5/微信/游戏)往往在多个时段同时开,
+     * 于是会生成多个可选项完全相同的冲突组。同一门课的身份键是全局唯一的 (一门课就是一
+     * 门课, 它在哪几个时段上就哪几个时段上), 如果让用户逐组选择, 后一组的操作会把前一组
+     * 的选择一起改掉, 界面上的单选也会莫名其妙地翻到别的选项。
+     *
+     * 合并后每门课只属于一个簇, 用户对每个簇只回答一次, 不可能自相矛盾。
+     *
+     * ponytail: 只按"是否有共同课程"连通。若出现 周三{A,B} 与 周五{B,C} 这种链式结构,
+     * 会被并成一个簇, 用户无法表达"A+C"的组合。真实课表里平行选修的可选项通常完全相同,
+     * 这种链式情况罕见; 真遇到再改成按簇内分组求解。
+     */
+    fun clusterConflicts(conflicts: List<CourseConflict>): List<ConflictCluster> {
+        if (conflicts.isEmpty()) return emptyList()
+
+        val parent = HashMap<String, String>()
+        fun find(x: String): String {
+            var v = x
+            while (parent.getOrDefault(v, v) != v) v = parent.getValue(v)
+            return v
+        }
+        fun union(a: String, b: String) {
+            val ra = find(a)
+            val rb = find(b)
+            if (ra != rb) parent[ra] = rb
+        }
+
+        for (conflict in conflicts) {
+            val keys = conflict.courses.map { it.selectionKey() }
+            keys.forEach { parent.getOrPut(it) { it } }
+            keys.drop(1).forEach { union(keys[0], it) }
+        }
+
+        val byRoot = linkedMapOf<String, MutableList<CourseConflict>>()
+        for (conflict in conflicts) {
+            val root = find(conflict.courses.first().selectionKey())
+            byRoot.getOrPut(root) { mutableListOf() }.add(conflict)
+        }
+
+        return byRoot.values.map { group ->
+            ConflictCluster(
+                courses = group.flatMap { it.courses }
+                    .distinctBy { it.selectionKey() }
+                    .sortedBy { it.name },
+                slots = group.map { ConflictSlot(it.dayOfWeek, it.startSlot, it.endSlot) }
+                    .distinct()
+                    .sortedWith(compareBy({ it.dayOfWeek }, { it.startSlot })),
+                weeks = group.flatMap { it.weeks }.distinct().sorted()
+            )
+        }.sortedWith(compareBy({ it.slots.first().dayOfWeek }, { it.slots.first().startSlot }))
+    }
+
     fun visibleCourses(context: Context, schedule: ScheduleData): List<Course> {
         val selected = loadSelectedKeys(context, schedule) ?: return schedule.courses
         return schedule.courses.filter { it.selectionKey() in selected }
@@ -122,6 +189,11 @@ object ScheduleSelection {
             .putString(KEY_SIGNATURE, signature(schedule))
             .putStringSet(KEY_SELECTED_KEYS, selectedKeys)
             .apply()
+    }
+
+    /** 清空选课结果 (清空课表时一并调用) */
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
     }
 
     private fun signature(schedule: ScheduleData): String {

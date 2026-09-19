@@ -16,31 +16,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.courseschedule.data.CourseConflict
-import com.example.courseschedule.model.Course
-import com.example.courseschedule.viewmodel.ScheduleViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /**
  * 设置界面 (独立页面, 非弹窗)。
- * 后续新功能(导入课表、学期设置等)统一放这里。
+ * 课表导入的确认弹窗不在这里, 而是由 MainActivity 统一渲染 [CourseSelectionDialog],
+ * 这样"导入时确认"和"事后补选冲突"可以共用同一个弹窗。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     currentStartDate: LocalDate?,
     currentThemeMode: String,
-    importSummary: ScheduleViewModel.ImportSummary?,
-    pendingSelectedKeys: Set<String>,
-    isImportReady: Boolean,
     error: String?,
     onSave: (LocalDate, String) -> Unit,
     onBack: () -> Unit,
     onImportFile: (Uri) -> Unit,
-    onConfirmImport: () -> Unit,
-    onSelectPendingCourse: (CourseConflict, Course) -> Unit,
-    onDismissImport: () -> Unit,
+    onClearSchedule: () -> Unit,
     onErrorShown: () -> Unit
 ) {
     var dateStr by remember {
@@ -49,6 +42,7 @@ fun SettingsScreen(
     var dateError by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     var selectedTheme by remember { mutableStateOf(currentThemeMode) }
+    var showClearConfirm by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val filePicker = rememberLauncherForActivityResult(
@@ -96,6 +90,15 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            OutlinedButton(
+                onClick = { showClearConfirm = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("🗑 清空课表")
+            }
 
             HorizontalDivider()
 
@@ -168,6 +171,26 @@ fun SettingsScreen(
         }
     }
 
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text("清空课表", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("会删掉已导入的课表和你的选课结果，课表变为空白。此操作无法撤销。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearConfirm = false
+                    onClearSchedule()
+                    Toast.makeText(context, "课表已清空", Toast.LENGTH_SHORT).show()
+                }) { Text("清空", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) { Text("取消") }
+            }
+        )
+    }
+
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState()
         DatePickerDialog(
@@ -191,93 +214,4 @@ fun SettingsScreen(
             DatePicker(state = datePickerState)
         }
     }
-
-    // 导入确认弹窗
-    importSummary?.let { summary ->
-        AlertDialog(
-            onDismissRequest = onDismissImport,
-            title = { Text("确认导入课表", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("解析成功：共 ${summary.courseCount} 条课程，${summary.totalWeeks} 周。")
-                    if (summary.conflicts.isEmpty()) {
-                        Text("未发现同一时间的多门课程。")
-                    } else {
-                        Text("发现 ${summary.conflicts.size} 组时间冲突，请选择你实际选的课程：")
-                        summary.conflicts.forEach { conflict ->
-                            Text(
-                                "${dayName(conflict.dayOfWeek)} 第${conflict.startSlot}-${conflict.endSlot}节（第${formatWeekRange(conflict.weeks)}周）",
-                                fontWeight = FontWeight.Bold
-                            )
-                            conflict.courses.forEach { course ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onSelectPendingCourse(conflict, course) },
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = course.selectionKey() in pendingSelectedKeys,
-                                        onClick = { onSelectPendingCourse(conflict, course) }
-                                    )
-                                    Column(modifier = Modifier.padding(start = 4.dp)) {
-                                        Text(course.name)
-                                        Text(
-                                            listOfNotNull(
-                                                course.teacher.takeIf { it.isNotBlank() }?.let { "教师：$it" },
-                                                course.teachingClass.takeIf { it.isNotBlank() }?.let { "教学班：$it" },
-                                                course.classroom.takeIf { it.isNotBlank() }?.let { "教室：$it" }
-                                            ).joinToString("  "),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(enabled = isImportReady, onClick = {
-                    onConfirmImport()
-                    Toast.makeText(context, "课表已更新", Toast.LENGTH_SHORT).show()
-                }) { Text("导入") }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismissImport) { Text("取消") }
-            }
-        )
-    }
-}
-
-private fun dayName(dayOfWeek: Int): String {
-    return listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
-        .getOrElse(dayOfWeek - 1) { "未知日期" }
-}
-
-/** 周次列表格式化为 "1-8,10-12" 这样的区间表示 */
-private fun formatWeekRange(weeks: List<Int>): String {
-    val sorted = weeks.sorted()
-    if (sorted.isEmpty()) return ""
-    val ranges = mutableListOf<String>()
-    var start = sorted.first()
-    var end = start
-    for (i in 1 until sorted.size) {
-        if (sorted[i] == end + 1) {
-            end = sorted[i]
-        } else {
-            ranges.add(if (start == end) "$start" else "$start-$end")
-            start = sorted[i]
-            end = start
-        }
-    }
-    ranges.add(if (start == end) "$start" else "$start-$end")
-    return ranges.joinToString(",")
 }
