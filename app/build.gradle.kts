@@ -5,10 +5,20 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// 签名信息放在仓库根目录的 keystore.properties (已被 .gitignore 忽略)
+// 签名信息放在仓库根目录的 keystore.properties (已被 .gitignore 忽略)。
+// storeFile 指向项目文件夹之外的绝对路径, 这样整个项目可以安全地打包/分享。
 val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps = Properties().apply {
     if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
+}
+
+// release 必须签得上名, 缺钥匙就直接报错
+// —— 免得安静地生出一个 app-release-unsigned.apk 然后被当成正式包发出去
+if (!keystorePropsFile.exists() && gradle.startParameter.taskNames.any { it.contains("release", true) }) {
+    throw GradleException(
+        "缺少 keystore.properties，无法给 release 包签名。\n" +
+            "签名密钥见 密码本「课表App签名密钥」，或 README「发布构建（签名）」。"
+    )
 }
 
 android {
@@ -47,9 +57,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            if (keystorePropsFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            // 始终挂上签名配置: 缺钥匙时让 AGP 在 validateSigning 阶段直接报错,
+            // 而不是静默产出一个装不上的 app-release-unsigned.apk
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

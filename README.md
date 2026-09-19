@@ -188,10 +188,12 @@ python pdf_to_json.py 课表.pdf
 
 ### 发布构建（签名）
 
-发布包用仓库根目录的 `release.jks` 签名，密码放在根目录的 `keystore.properties`（已被 `.gitignore` 忽略）：
+签名密钥库**放在项目文件夹之外**（`C:\Users\nixscc\AndroidKeys\CourseSchedule\release.jks`），
+这样整个项目可以安全地打包/分享。项目根目录的 `keystore.properties` 只记录"去哪找钥匙 + 密码"，
+已被 `.gitignore` 忽略：
 
 ```properties
-storeFile=release.jks
+storeFile=C:/Users/nixscc/AndroidKeys/CourseSchedule/release.jks
 storePassword=***
 keyAlias=courseschedule
 keyPassword=***
@@ -202,7 +204,8 @@ keyPassword=***
 ```
 
 产物：`app/build/outputs/apk/release/app-release.apk`（release 已开启 R8 代码压缩和资源压缩）。
-缺了 `keystore.properties` 时构建会产出未签名的 `app-release-unsigned.apk`，装不上。
+
+> 缺少 `keystore.properties` 时 release 构建会**直接报错**，不会静默产出一个装不上的未签名包。
 
 验证签名：
 
@@ -211,8 +214,11 @@ $ANDROID_HOME/build-tools/<版本>/apksigner verify --print-certs \
   app/build/outputs/apk/release/app-release.apk
 ```
 
+输出的 `SHA-256 digest` 应等于 `92:16:80:13:82:D7:13:D5:4B:99:5E:3A:B9:35:AD:4F:89:A9:EA:2E:04:95:E4:25:18:D3:62:C1:16:86:36:95`。
+
 > ⚠️ **`release.jks` 和它的密码必须单独备份。** 同一个应用只有用同一把钥匙签名才能覆盖安装升级；
-> 钥匙丢了，用户必须先卸载再装新版，而卸载会丢掉他导入的课表和设置。
+> 换了钥匙，用户会看到 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，**必须先卸载**再装新版，
+> 而卸载会丢掉他导入的课表和设置。密钥与密码记录在个人密码本「课表App签名密钥」里。
 > 每次发新版记得把 `versionCode` 加一，否则新包装不上去。
 
 ## 首次使用
