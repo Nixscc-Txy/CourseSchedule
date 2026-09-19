@@ -5,8 +5,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 使用真实的教务系统导出文件验证 OLE2/BIFF8 读取 + 矩阵解析。
- * 测试资源: app/src/test/resources/schedule_fixture.xls
+ * 用一份教务系统导出格式的 .xls 验证 OLE2/BIFF8 读取 + 矩阵解析。
+ * 测试资源: app/src/test/resources/schedule_fixture.xls（课程与教师姓名均已化名）
  */
 class XlsReaderTest {
 
