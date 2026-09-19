@@ -1,22 +1,25 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+# --- IDE ---
+# Android Studio / IntelliJ 的本地配置整个不跟踪:
+# 里面会记录本地路径、设备、最近打开的文件, 而且 IDE 每次都会改动它们,
+# 跟踪的话 git status 永远不干净。别人 clone 后 IDE 会自己生成一份。
 .idea/
-.DS_Store
+*.iml
+
+# --- Gradle / 构建产物 ---
+.gradle
 /build
 /captures
+local.properties
 .externalNativeBuild
 .cxx
-local.properties
-.claude
+
+# --- 签名密钥(绝对不能进仓库) ---
 *.jks
 *.keystore
 keystore.properties
 secrets.properties
 .env
+
+# --- 其它 ---
+.DS_Store
+.claude
