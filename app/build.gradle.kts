@@ -17,7 +17,7 @@ val keystoreProps = Properties().apply {
 if (!keystorePropsFile.exists() && gradle.startParameter.taskNames.any { it.contains("release", true) }) {
     throw GradleException(
         "缺少 keystore.properties，无法给 release 包签名。\n" +
-            "签名密钥见 密码本「课表App签名密钥」，或 README「发布构建（签名）」。"
+            "签名密钥见 密码本「课表App签名密钥」，或 docs/release.md。"
     )
 }
 
@@ -49,6 +49,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Studio Run 出来的 debug 包也用正式签名: 手机上装了正式版之后可以直接覆盖安装,
+            // 不会再因为签名不同被强制卸载重装(那会丢掉导入的课表和设置)。
+            // 没有 keystore.properties 时保持 AGP 默认的调试签名, 别人 clone 下来照样能跑。
+            if (keystorePropsFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             // 纯 Compose、无反射, R8 安全; 顺带压掉未使用的资源
             isMinifyEnabled = true

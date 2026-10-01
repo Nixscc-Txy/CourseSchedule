@@ -2,6 +2,8 @@ package com.example.courseschedule.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +22,10 @@ import com.example.courseschedule.data.TimeUtils
 import com.example.courseschedule.model.Course
 import java.time.LocalDate
 
+/**
+ * 周视图。左右滑动切换周次 —— 每一周是 HorizontalPager 的一页, 所以是"滑动"动画,
+ * 不是整页切换; 顶部的 ◀ ▶ 和"回到本周"也是让 Pager 滑过去, 保持同一种手感。
+ */
 @Composable
 fun WeekViewScreen(
     courses: List<Course>,
@@ -30,41 +36,39 @@ fun WeekViewScreen(
     startDate: LocalDate?,
     unresolvedConflictSlots: Int,
     scheduleEmpty: Boolean,
+    onSetWeek: (Int) -> Unit,
     onPrevWeek: () -> Unit,
     onNextWeek: () -> Unit,
     onBackToToday: () -> Unit,
     onOpenSettings: () -> Unit,
-    onResolveConflicts: () -> Unit
+    onResolveConflicts: () -> Unit,
+    onUpdateCourse: (Course, String, String, String) -> Unit
 ) {
     var selectedCourse by remember { mutableStateOf<Course?>(null) }
+    var editingCourse by remember { mutableStateOf<Course?>(null) }
+    // 「回到本周」要瞬时切页: 跨好几周时滚动动画会一路闪过中间那些周, 反而更晃眼
+    var jumpInstantly by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     val todayDay = today.dayOfWeek.value // 1=Mon..7=Sun
 
-    // 颜色只解析一次, 不放在每个格子里反复 parseColor
-    val colorCache = remember(courses) {
-        courses.map { it.color }.distinct().associateWith { parseColor(it) }
-    }
+    val pagerState = rememberPagerState(
+        initialPage = (currentWeek - 1).coerceIn(0, (totalWeeks - 1).coerceAtLeast(0))
+    ) { totalWeeks }
 
-    // Calculate dates for each day of the current week
-    val weekDates: List<LocalDate> = remember(currentWeek, startDate) {
-        if (startDate == null) {
-            emptyList()
-        } else {
-            (0..6).map { startDate.plusDays(((currentWeek - 1) * 7 + it).toLong()) }
-        }
+    // 滑到哪一周就同步给 ViewModel (周次标题、"本周"标记、"回到本周"都跟着走)。
+    // 用 settledPage 而不是 currentPage: 动画途中不会来回改周次, 也就不会打断动画。
+    LaunchedEffect(pagerState.settledPage) {
+        onSetWeek(pagerState.settledPage + 1)
     }
-
-    // 按 [时段行][星期] 一次性分好组, 避免每次重组做 42 次全量过滤
-    val grid: List<List<List<Course>>> = remember(courses) {
-        TimeUtils.slotTimes.map { slot ->
-            (1..7).map { day ->
-                courses.filter {
-                    it.dayOfWeek == day &&
-                        it.startSlot <= slot.endSlot &&
-                        it.endSlot >= slot.startSlot
-                }
-            }
+    // 周次从外面变了 (点箭头 / 回到本周) 就把 Pager 跟过去:
+    // 箭头走动画, 「回到本周」直接瞬移。
+    LaunchedEffect(currentWeek) {
+        val target = currentWeek - 1
+        if (pagerState.currentPage != target) {
+            if (jumpInstantly) pagerState.scrollToPage(target)
+            else pagerState.animateScrollToPage(target)
         }
+        jumpInstantly = false
     }
 
     Column(
@@ -80,7 +84,10 @@ fun WeekViewScreen(
             canJumpToToday = startDate != null,
             onPrev = onPrevWeek,
             onNext = onNextWeek,
-            onBackToToday = onBackToToday,
+            onBackToToday = {
+                jumpInstantly = true
+                onBackToToday()
+            },
             onSettings = onOpenSettings
         )
 
@@ -108,23 +115,20 @@ fun WeekViewScreen(
                         .clip(RoundedCornerShape(14.dp))
                         .background(colors.surface)
                 ) {
-                    DayHeaderRow(todayDay, weekDates)
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        TimeUtils.slotTimes.forEachIndexed { rowIndex, slot ->
-                            TimeSlotRow(
-                                slot = slot,
-                                coursesByDay = grid[rowIndex],
-                                todayDay = todayDay,
-                                colorCache = colorCache,
-                                onCourseClick = { selectedCourse = it }
-                            )
-                        }
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize(),
+                        pageSpacing = 8.dp
+                    ) { page ->
+                        val week = page + 1
+                        WeekPage(
+                            week = week,
+                            courses = courses,
+                            // 今天所在的列只在"本周"高亮: 翻到别的周还亮着会指错日期
+                            highlightDay = if (week == todayWeek) todayDay else 0,
+                            startDate = startDate,
+                            onCourseClick = { selectedCourse = it }
+                        )
                     }
                 }
             }
@@ -132,8 +136,7 @@ fun WeekViewScreen(
     }
 
     selectedCourse?.let { course ->
-        val dayNames = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
-        val dayName = dayNames.getOrElse(course.dayOfWeek - 1) { "未知" }
+        val dayName = dayName(course.dayOfWeek)
         val clock = TimeUtils.timesFor(course.startSlot, course.endSlot)
             ?.let { (start, end) -> " $start-$end" }
             .orEmpty()
@@ -145,8 +148,83 @@ fun WeekViewScreen(
             classroom = course.classroom,
             timeSlot = "$dayName 第${course.startSlot}-${course.endSlot}节$clock",
             weeks = formatWeeks(course.weeks),
+            onEdit = { editingCourse = course },
             onDismiss = { selectedCourse = null }
         )
+    }
+
+    editingCourse?.let { course ->
+        CourseEditDialog(
+            course = course,
+            onDismiss = { editingCourse = null },
+            onSave = { name, teacher, classroom ->
+                onUpdateCourse(course, name, teacher, classroom)
+                // 详情弹窗留着, 并立刻显示改后的内容 (数据落盘由 ViewModel 负责)
+                selectedCourse = course.copy(name = name, teacher = teacher, classroom = classroom)
+                editingCourse = null
+            }
+        )
+    }
+}
+
+/** 一周的内容: 日期表头 + 节次网格。每一页自己算自己那周的课。 */
+@Composable
+private fun WeekPage(
+    week: Int,
+    courses: List<Course>,
+    highlightDay: Int,
+    startDate: LocalDate?,
+    onCourseClick: (Course) -> Unit
+) {
+    val weekDates: List<LocalDate> = remember(week, startDate) {
+        if (startDate == null) {
+            emptyList()
+        } else {
+            (0..6).map { startDate.plusDays(((week - 1) * 7 + it).toLong()) }
+        }
+    }
+
+    val weekCourses = remember(week, courses) {
+        courses.filter { week in it.weeks }
+    }
+
+    // 颜色只解析一次, 不放在每个格子里反复 parseColor
+    val colorCache = remember(weekCourses) {
+        weekCourses.map { it.color }.distinct().associateWith { parseColor(it) }
+    }
+
+    // 按 [时段行][星期] 一次性分好组, 避免每次重组做 42 次全量过滤
+    val grid: List<List<List<Course>>> = remember(weekCourses) {
+        TimeUtils.slotTimes.map { slot ->
+            (1..7).map { day ->
+                weekCourses.filter {
+                    it.dayOfWeek == day &&
+                        it.startSlot <= slot.endSlot &&
+                        it.endSlot >= slot.startSlot
+                }
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        DayHeaderRow(highlightDay, weekDates)
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
+            TimeUtils.slotTimes.forEachIndexed { rowIndex, slot ->
+                TimeSlotRow(
+                    slot = slot,
+                    coursesByDay = grid[rowIndex],
+                    highlightDay = highlightDay,
+                    colorCache = colorCache,
+                    onCourseClick = onCourseClick
+                )
+            }
+        }
     }
 }
 
@@ -235,7 +313,7 @@ private fun StartDateHint(onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun DayHeaderRow(todayDay: Int, weekDates: List<LocalDate>) {
+private fun DayHeaderRow(highlightDay: Int, weekDates: List<LocalDate>) {
     val colors = MaterialTheme.colorScheme
     val monthText = weekDates.firstOrNull()?.let {
         "${it.monthValue}月"
@@ -259,7 +337,7 @@ private fun DayHeaderRow(todayDay: Int, weekDates: List<LocalDate>) {
             val days = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
             for ((i, day) in days.withIndex()) {
                 val dayNum = i + 1
-                val isToday = dayNum == todayDay
+                val isToday = dayNum == highlightDay
                 val dateStr = weekDates.getOrNull(i)?.dayOfMonth?.toString() ?: ""
                 Box(
                     modifier = Modifier
@@ -295,7 +373,7 @@ private fun DayHeaderRow(todayDay: Int, weekDates: List<LocalDate>) {
 private fun TimeSlotRow(
     slot: SlotTime,
     coursesByDay: List<List<Course>>,
-    todayDay: Int,
+    highlightDay: Int,
     colorCache: Map<String, Color>,
     onCourseClick: (Course) -> Unit
 ) {
@@ -326,7 +404,7 @@ private fun TimeSlotRow(
         }
 
         for (day in 1..7) {
-            val isToday = day == todayDay
+            val isToday = day == highlightDay
             Box(
                 modifier = Modifier
                     .weight(1f)

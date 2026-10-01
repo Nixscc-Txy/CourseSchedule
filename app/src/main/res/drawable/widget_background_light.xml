@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  浅色小组件底色。用纯白 (#FFFFFF) 在桌面上太扎眼, 这里跟主体浅色主题的页面底色一致
+  (IosGroupedBgLight = #F2F2F7), 读起来是"浅灰卡片"而不是一块发光的白板。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#F2F2F7" />
+    <corners android:radius="12dp" />
+</shape>

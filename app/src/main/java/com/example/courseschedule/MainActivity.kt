@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
             val totalWeeks by vm.totalWeeks.collectAsState()
             val startDate by vm.startDate.collectAsState()
             val themeMode by vm.themeMode.collectAsState()
+            val widgetTheme by vm.widgetTheme.collectAsState()
             val selectionPrompt by vm.selectionPrompt.collectAsState()
             val clusterAnswers by vm.clusterAnswers.collectAsState()
             val optionalSelectedKeys by vm.optionalSelectedKeys.collectAsState()
@@ -56,9 +57,10 @@ class MainActivity : ComponentActivity() {
                         SettingsScreen(
                             currentStartDate = startDate,
                             currentThemeMode = themeMode,
+                            currentWidgetTheme = widgetTheme,
                             error = error,
-                            onSave = { date, mode ->
-                                vm.saveSettings(date, mode)
+                            onSave = { date, mode, widget ->
+                                vm.saveSettings(date, mode, widget)
                                 showSettings = false
                             },
                             onBack = { showSettings = false },
@@ -76,11 +78,15 @@ class MainActivity : ComponentActivity() {
                             startDate = startDate,
                             unresolvedConflictSlots = unresolvedConflictSlots,
                             scheduleEmpty = scheduleEmpty,
+                            onSetWeek = { vm.setWeek(it) },
                             onPrevWeek = { vm.prevWeek() },
                             onNextWeek = { vm.nextWeek() },
                             onBackToToday = { vm.goToToday() },
                             onOpenSettings = { showSettings = true },
-                            onResolveConflicts = { vm.resolveConflicts() }
+                            onResolveConflicts = { vm.resolveConflicts() },
+                            onUpdateCourse = { course, name, teacher, classroom ->
+                                vm.updateCourse(course, name, teacher, classroom)
+                            }
                         )
                     }
                 }

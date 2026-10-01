@@ -55,6 +55,10 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
     private val _today = MutableStateFlow(LocalDate.now())
     val today: StateFlow<LocalDate> = _today
 
+    /**
+     * 当前课表里"可见"的课程, **不按周过滤**。
+     * 周视图左右滑动时相邻周要同时渲染, 所以按周筛选交给界面自己做。
+     */
     private val _courses = MutableStateFlow(emptyList<Course>())
     val courses: StateFlow<List<Course>> = _courses
 
@@ -63,6 +67,10 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
 
     private val _themeMode = MutableStateFlow("system")
     val themeMode: StateFlow<String> = _themeMode
+
+    /** 桌面小组件配色: follow(跟随主体) / light / dark */
+    private val _widgetTheme = MutableStateFlow(SettingsManager.WIDGET_THEME_FOLLOW)
+    val widgetTheme: StateFlow<String> = _widgetTheme
 
     private var pendingImport: ScheduleData? = null
     private val _selectionPrompt = MutableStateFlow<SelectionPrompt?>(null)
@@ -93,9 +101,11 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
     init {
         _startDate.value = SettingsManager.getStartDate(application)
         _themeMode.value = SettingsManager.getThemeMode(application)
+        _widgetTheme.value = SettingsManager.getWidgetThemeMode(application)
         refreshToday()
         refreshUnresolvedConflicts()
         setWeek(_todayWeek.value)
+        refreshVisibleCourses()
     }
 
     /** App 可能跨天挂在后台, 回到前台时重新算"今天是第几周" */
@@ -112,9 +122,7 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setWeek(week: Int) {
-        val w = week.coerceIn(1, _totalWeeks.value)
-        _currentWeek.value = w
-        updateCoursesForWeek(w)
+        _currentWeek.value = week.coerceIn(1, _totalWeeks.value)
     }
 
     fun nextWeek() {
@@ -125,12 +133,16 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
         setWeek(_currentWeek.value - 1)
     }
 
-    fun saveSettings(startDate: LocalDate, themeMode: String) {
+    fun saveSettings(startDate: LocalDate, themeMode: String, widgetTheme: String) {
         viewModelScope.launch {
             SettingsManager.setStartDate(getApplication(), startDate)
             SettingsManager.setThemeMode(getApplication(), themeMode)
+            SettingsManager.setWidgetThemeMode(getApplication(), widgetTheme)
             _startDate.value = startDate
             _themeMode.value = themeMode
+            _widgetTheme.value = widgetTheme
+            // 主体主题或小组件配色一改, 桌面小组件要跟着重画
+            CourseWidgetReceiver.refresh(getApplication())
             refreshToday()
             setWeek(_todayWeek.value)
         }
@@ -272,6 +284,44 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
         _error.value = null
     }
 
+    // ------------------------------------------------------------ 编辑课程
+
+    /**
+     * 改一门课的信息 (课名/教师/教室), 并把结果固化进"导入的课表"。
+     *
+     * 两个坑:
+     *  1. 选课结果按"身份键 = 课名+教师+教室"存 (见 ScheduleSelection), 改了这三样键就变了,
+     *     所以要把旧键迁到新键, 否则改个名字就要求重新选一遍冲突课;
+     *  2. 内置 assets 课表不能写, 所以编辑一律落到导入文件里 (编辑即固化)。
+     */
+    fun updateCourse(course: Course, name: String, teacher: String, classroom: String) {
+        val index = schedule.courses.indexOfFirst { it === course }
+            .takeIf { it >= 0 } ?: schedule.courses.indexOfFirst { it == course }
+        if (index < 0) return
+
+        val old = schedule.courses[index]
+        val updated = old.copy(name = name, teacher = teacher, classroom = classroom)
+        val newSchedule = schedule.copy(
+            courses = schedule.courses.toMutableList().also { it[index] = updated }
+        )
+
+        // 用旧课表取出已存的选课结果 (签名此时还对得上), 换键后再按新课表存回去
+        ScheduleSelection.loadSelectedKeys(getApplication(), schedule)?.let { keys ->
+            val migrated = keys.map {
+                if (it == old.selectionKey()) updated.selectionKey() else it
+            }.toSet()
+            ScheduleSelection.saveSelectedKeys(getApplication(), newSchedule, migrated)
+        }
+
+        ScheduleImporter.save(getApplication(), newSchedule)
+        schedule = newSchedule
+        _totalWeeks.value = newSchedule.totalWeeks
+        _scheduleEmpty.value = newSchedule.courses.isEmpty()
+        refreshUnresolvedConflicts()
+        refreshVisibleCourses()
+        CourseWidgetReceiver.refresh(getApplication())
+    }
+
     private fun reload() {
         schedule = CourseRepository.load(getApplication())
         _totalWeeks.value = schedule.totalWeeks
@@ -279,10 +329,10 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
         refreshToday()
         refreshUnresolvedConflicts()
         setWeek(_currentWeek.value)
+        refreshVisibleCourses()
     }
 
-    private fun updateCoursesForWeek(week: Int) {
+    private fun refreshVisibleCourses() {
         _courses.value = ScheduleSelection.visibleCourses(getApplication(), schedule)
-            .filter { week in it.weeks }
     }
 }

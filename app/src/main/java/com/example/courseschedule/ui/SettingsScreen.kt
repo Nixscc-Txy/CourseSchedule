@@ -1,5 +1,7 @@
 package com.example.courseschedule.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,8 +18,30 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.courseschedule.data.AppUpdate
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+
+/**
+ * 用浏览器/已装的 GitHub App 打开一个链接。
+ * 不用 resolveActivity 预判 —— API 30+ 那需要额外的 <queries> 声明, 直接 try 更省事。
+ */
+private fun openUrl(context: android.content.Context, url: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "没有可打开链接的应用，请手动访问 $url", Toast.LENGTH_LONG).show()
+    }
+}
+
+/** 检查更新的界面状态 */
+private sealed interface UpdateUiState {
+    data object Idle : UpdateUiState
+    data object Checking : UpdateUiState
+    data class Newer(val latest: AppUpdate.Latest, val current: String) : UpdateUiState
+    data class Failed(val message: String) : UpdateUiState
+}
 
 /**
  * 设置界面 (独立页面, 非弹窗)。
@@ -29,8 +53,9 @@ import java.time.format.DateTimeFormatter
 fun SettingsScreen(
     currentStartDate: LocalDate?,
     currentThemeMode: String,
+    currentWidgetTheme: String,
     error: String?,
-    onSave: (LocalDate, String) -> Unit,
+    onSave: (LocalDate, String, String) -> Unit,
     onBack: () -> Unit,
     onImportFile: (Uri) -> Unit,
     onClearSchedule: () -> Unit,
@@ -42,6 +67,9 @@ fun SettingsScreen(
     var dateError by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     var selectedTheme by remember { mutableStateOf(currentThemeMode) }
+    var selectedWidgetTheme by remember { mutableStateOf(currentWidgetTheme) }
+    var updateState by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
+    val scope = rememberCoroutineScope()
     var showClearConfirm by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -149,6 +177,37 @@ fun SettingsScreen(
                 }
             }
 
+            HorizontalDivider()
+
+            // ------------------------------------------------ 小组件颜色
+            Text("小组件颜色", style = MaterialTheme.typography.titleSmall)
+            val widgetThemes = listOf(
+                "follow" to "跟随主体",
+                "light" to "浅色",
+                "dark" to "深色"
+            )
+            for ((value, label) in widgetThemes) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedWidgetTheme = value }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = selectedWidgetTheme == value,
+                        onClick = { selectedWidgetTheme = value }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(label)
+                }
+            }
+            Text(
+                "桌面小组件单独配色。默认「跟随主体」，即和上面选的主题一致。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // ------------------------------------------------ 保存
@@ -161,13 +220,67 @@ fun SettingsScreen(
                         null
                     }
                     if (date != null) {
-                        onSave(date, selectedTheme)
+                        onSave(date, selectedTheme, selectedWidgetTheme)
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("保存")
             }
+
+            HorizontalDivider()
+
+            // ------------------------------------------------ 关于 / 更新
+            Text("关于", style = MaterialTheme.typography.titleSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("当前版本", modifier = Modifier.weight(1f))
+                Text(
+                    AppUpdate.versionLabel(context),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    updateState = UpdateUiState.Checking
+                    scope.launch {
+                        updateState = when (val result = AppUpdate.check(context)) {
+                            is AppUpdate.CheckResult.Newer ->
+                                UpdateUiState.Newer(result.latest, result.current)
+                            is AppUpdate.CheckResult.UpToDate -> {
+                                Toast.makeText(
+                                    context,
+                                    "已是最新版本 ${result.current}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                UpdateUiState.Idle
+                            }
+                            is AppUpdate.CheckResult.Failed -> UpdateUiState.Failed(result.message)
+                        }
+                    }
+                },
+                enabled = updateState != UpdateUiState.Checking,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (updateState == UpdateUiState.Checking) "检查中…" else "检查更新")
+            }
+            // 国内访问 api.github.com 经常不通, 所以"打开发布页"永远留一条路
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = { openUrl(context, AppUpdate.RELEASES_URL) }) {
+                    Text("打开发布页", fontSize = 13.sp)
+                }
+            }
+            Text(
+                "「检查更新」只读一次 GitHub 的发布信息（本 App 唯一联网的地方，只读取、不上传任何数据）。" +
+                    "发现新版本时给出下载入口，覆盖安装即可 —— 签名没变，课表和设置都不会丢。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 
@@ -189,6 +302,71 @@ fun SettingsScreen(
                 TextButton(onClick = { showClearConfirm = false }) { Text("取消") }
             }
         )
+    }
+
+    when (val state = updateState) {
+        is UpdateUiState.Newer -> AlertDialog(
+            onDismissRequest = { updateState = UpdateUiState.Idle },
+            title = { Text("发现新版本", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        "当前 ${state.current}　→　最新 ${state.latest.tag}",
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (state.latest.notes.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            AppUpdate.plainNotes(state.latest.notes),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        "点「去下载」打开下载页，装完覆盖安装即可，课表和设置都不会丢。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val url = state.latest.apkUrl ?: state.latest.pageUrl
+                    updateState = UpdateUiState.Idle
+                    openUrl(context, url)
+                }) { Text("去下载") }
+            },
+            dismissButton = {
+                TextButton(onClick = { updateState = UpdateUiState.Idle }) { Text("稍后") }
+            }
+        )
+
+        is UpdateUiState.Failed -> AlertDialog(
+            onDismissRequest = { updateState = UpdateUiState.Idle },
+            title = { Text("检查更新失败", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "${state.message}\n\n国内访问 GitHub 接口经常不通。" +
+                        "可以直接打开发布页自己看一眼有没有新版。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    updateState = UpdateUiState.Idle
+                    openUrl(context, AppUpdate.RELEASES_URL)
+                }) { Text("打开发布页") }
+            },
+            dismissButton = {
+                TextButton(onClick = { updateState = UpdateUiState.Idle }) { Text("关闭") }
+            }
+        )
+
+        else -> Unit
     }
 
     if (showDatePicker) {

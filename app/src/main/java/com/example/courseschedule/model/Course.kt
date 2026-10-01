@@ -23,3 +23,20 @@ data class Course(
         return listOf(name, teacher, classroom).joinToString("\u001F")
     }
 }
+
+/**
+ * 把 "致远楼213" 拆成 教学楼 / 教室号, 编辑界面要分两个输入框。
+ * 没有数字时整串算教学楼; 纯数字时整串算教室号。
+ */
+fun splitClassroom(classroom: String): Pair<String, String> {
+    val s = classroom.trim()
+    val i = s.indexOfFirst { it.isDigit() }
+    return when {
+        i < 0 -> s to ""
+        i == 0 -> "" to s
+        else -> s.substring(0, i).trim() to s.substring(i)
+    }
+}
+
+/** 与 [splitClassroom] 相反: 拼回 [Course.classroom] */
+fun joinClassroom(building: String, room: String): String = building.trim() + room.trim()

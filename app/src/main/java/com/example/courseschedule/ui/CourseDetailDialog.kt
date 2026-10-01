@@ -13,6 +13,7 @@ fun CourseDetailDialog(
     classroom: String,
     timeSlot: String,
     weeks: String,
+    onEdit: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -36,6 +37,12 @@ fun CourseDetailDialog(
             }
         },
         confirmButton = {
+            // 右下角: 进编辑
+            TextButton(onClick = onEdit) {
+                Text("更改课程信息")
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("关闭")
             }
