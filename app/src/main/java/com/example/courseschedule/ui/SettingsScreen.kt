@@ -322,7 +322,7 @@ fun SettingsScreen(
                     if (state.latest.notes.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            AppUpdate.plainNotes(state.latest.notes),
+                            state.latest.notes,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -336,9 +336,8 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val url = state.latest.apkUrl ?: state.latest.pageUrl
                     updateState = UpdateUiState.Idle
-                    openUrl(context, url)
+                    openUrl(context, state.latest.pageUrl)
                 }) { Text("去下载") }
             },
             dismissButton = {

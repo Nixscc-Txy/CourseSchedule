@@ -4,31 +4,32 @@ import android.content.Context
 import androidx.core.content.pm.PackageInfoCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
 /**
  * 版本信息 + 更新检查。
  *
- * 检查只做一件事: 读 GitHub 的 releases/latest 接口(一个 JSON), 判断有没有新版本。
- * **不自己下载、不自己安装** —— 有新版就把用户交给浏览器去下载, 所以只需要 INTERNET 一个权限,
- * 不用 REQUEST_INSTALL_PACKAGES, 也避开了应用市场对"应用内自行下载安装"的限制。
- * 这也是本项目唯一需要联网的地方, 只读取、不上传任何数据(课表不会被碰到)。
+ * 读的是 GitHub 的 **Atom 源** (`releases.atom`), 不是 REST API —— 这一点很关键:
+ * 未认证的 `api.github.com` 限 60 次/小时, 而且**按公网 IP 算**。国内手机普遍走运营商共享出口
+ * (CGNAT), 这个额度经常被同网其他人提前用光, App 里就会莫名其妙报 HTTP 403(实测到过:
+ * 连手机浏览器直接打开该接口都被拒, 报文写明 rate limit 与手机出口 IP)。
+ * Atom 源是普通页面资源, 不受该限额影响 —— 同一台手机、同一张卡上实测正常。
+ *
+ * 只检测、不下载、不安装: 有新版就把用户交给浏览器打开发布页。因此只需要 INTERNET 一个权限,
+ * 不用 REQUEST_INSTALL_PACKAGES, 也避开应用市场对"应用内自行下载安装"的限制。
  */
 object AppUpdate {
 
     const val RELEASES_URL = "https://github.com/Nixscc-Txy/CourseSchedule/releases/latest"
-    private const val API_LATEST =
-        "https://api.github.com/repos/Nixscc-Txy/CourseSchedule/releases/latest"
+    private const val ATOM_URL = "https://github.com/Nixscc-Txy/CourseSchedule/releases.atom"
 
     /** 最新一次发布 */
     data class Latest(
         val tag: String,
         val name: String,
         val notes: String,
-        val pageUrl: String,
-        val apkUrl: String?
+        val pageUrl: String
     )
 
     sealed interface CheckResult {
@@ -60,26 +61,14 @@ object AppUpdate {
         }
     }
 
-    /** 请求 GitHub 并比对版本; 内部切到 IO 线程, 直接在协程里调即可 */
+    /** 请求 Atom 源并比对版本; 内部切到 IO 线程, 直接在协程里调即可 */
     suspend fun check(context: Context): CheckResult = withContext(Dispatchers.IO) {
         try {
-            val json = JSONObject(requestLatestJson())
-            val latest = Latest(
-                tag = json.optString("tag_name"),
-                name = json.optString("name"),
-                notes = json.optString("body"),
-                pageUrl = json.optString("html_url").ifBlank { RELEASES_URL },
-                apkUrl = json.optJSONArray("assets")?.let { assets ->
-                    (0 until assets.length())
-                        .map { assets.getJSONObject(it) }
-                        .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
-                        ?.optString("browser_download_url")
-                        ?.takeIf { it.isNotBlank() }
-                }
-            )
+            val latest = parseLatest(request(ATOM_URL))
+                ?: throw IllegalStateException("发布信息里没有找到版本")
             val current = currentVersionName(context)
             val cmp = compareVersions(latest.tag, current)
-            // 版本号格式看不懂时 (cmp == null) 也当"有更新", 提示用户去发布页自己看一眼,
+            // 版本号格式看不懂时 (cmp == null) 也当"有更新", 让用户去发布页自己看一眼,
             // 总比默默说"已是最新"把人骗过去强
             if (cmp == null || cmp > 0) CheckResult.Newer(latest, current)
             else CheckResult.UpToDate(latest, current)
@@ -88,14 +77,35 @@ object AppUpdate {
         }
     }
 
-    private fun requestLatestJson(): String {
-        val conn = (URL(API_LATEST).openConnection() as HttpURLConnection).apply {
+    /**
+     * 解析 Atom 源里最新一条发布。源按时间倒序, 所以第一个 entry 就是最新版。
+     * 只用正则取几个固定字段 —— 这是 GitHub 机器生成的固定结构, 且有真实源文本作单测固件。
+     */
+    fun parseLatest(xml: String): Latest? {
+        val entry = between(xml, "<entry>", "</entry>") ?: return null
+
+        val pageUrl = Regex("<link[^>]*rel=\"alternate\"[^>]*href=\"([^\"]+)\"")
+            .find(entry)?.groupValues?.get(1)
+            ?.let(::unescapeXml)
+            ?: return null
+        val tag = pageUrl.substringAfterLast("/releases/tag/", "")
+        if (tag.isBlank()) return null
+
+        val name = between(entry, "<title>", "</title>")?.let(::unescapeXml) ?: tag
+        val notes = between(entry, "<content", "</content>")
+            ?.substringAfter('>', "")          // 跳过 <content type="html"> 的剩余属性
+            ?.let(::htmlToText)
+            .orEmpty()
+
+        return Latest(tag = tag, name = name, notes = notes, pageUrl = pageUrl)
+    }
+
+    private fun request(url: String): String {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 8000
             readTimeout = 8000
-            // GitHub API 对没有 User-Agent 的请求直接 403, 这个头必须带
             setRequestProperty("User-Agent", "CourseSchedule-Android")
-            setRequestProperty("Accept", "application/vnd.github+json")
         }
         return try {
             val code = conn.responseCode
@@ -106,21 +116,39 @@ object AppUpdate {
         }
     }
 
-    /**
-     * 发布说明在 GitHub 上是 Markdown, 原样塞进弹窗会露出 "##" 和 "**" 这些记号。
-     * 这里只做最轻的清理(标题号 / 粗体 / 行内代码 / 多余空行), 不引 Markdown 渲染库。
-     */
-    fun plainNotes(markdown: String): String {
-        return markdown.lineSequence()
-            .map { line ->
-                line.trim().trimStart('#').trim()
-                    .replace("**", "")
-                    .replace("`", "")
-            }
-            .joinToString("\n")
-            .trim()
-            .replace(Regex("\\n{3,}"), "\n\n")
+    private fun between(text: String, start: String, end: String): String? {
+        val i = text.indexOf(start)
+        if (i < 0) return null
+        val j = text.indexOf(end, i + start.length)
+        if (j < 0) return null
+        return text.substring(i + start.length, j)
     }
+}
+
+/**
+ * Atom 源里的发布说明是 **XML 转义过的 HTML** (`&lt;h2&gt;...`), 先反转义再摘掉标签,
+ * 得到能直接塞进弹窗的纯文本。
+ */
+fun htmlToText(escapedHtml: String): String {
+    val html = unescapeXml(escapedHtml)
+    return html
+        .replace(Regex("(?i)<br\\s*/?>"), "\n")
+        .replace(Regex("(?i)</(p|li|h[1-6]|ul|ol)>"), "\n")
+        .replace(Regex("<[^>]+>"), "")
+        .lines()
+        .joinToString("\n") { it.trim() }
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
+}
+
+private fun unescapeXml(text: String): String {
+    return text
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")     // 放最后, 免得把 &amp;lt; 二次还原成 <
 }
 
 /**

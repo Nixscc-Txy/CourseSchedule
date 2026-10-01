@@ -104,18 +104,27 @@ pwsh -File tools/release.ps1 -Version 1.1.0 -NotesFile CHANGELOG.md   # 也可�
 
 `@
 点「检查更新」
-  → GET https://api.github.com/repos/Nixscc-Txy/CourseSchedule/releases/latest
+  → GET https://github.com/Nixscc-Txy/CourseSchedule/releases.atom
       ├─ 有新版 → 弹窗显示版本与发布说明，[稍后] [去下载]
       ├─ 已最新 → Toast 提示
       └─ 失败  → 弹窗说明原因 + [打开发布页] 兜底
 `@
 
-实现要点（`data/AppUpdate.kt`）：
+### 为什么用 Atom 源而不是 REST API
 
-- 请求必须带 `User-Agent`，GitHub API 对没有 UA 的请求直接返回 403
-- 超时 8 秒；失败不报错误对话框了事，而是给出「打开发布页」的兜底路径（国内访问 `api.github.com` 时好时坏，实测在部分运营商 5G 下可用）
-- 版本比较**按点分段做数值比较**，不是字符串比大小（`1.0.10` 字符串比 `1.0.9` 小，版本上却更大）
+`api.github.com` 对**未认证**请求限 60 次/小时，而且**按公网 IP 计**。国内手机普遍走运营商共享出口
+（CGNAT），这个额度经常被同网的其他用户提前用光 —— 实测在手机上出现过 HTTP 403，报文直接写着
+`API rate limit exceeded for <手机出口 IP>`，**连手机浏览器直接打开该接口也一样被拒**，
+而同一台手机、同一张卡访问 `releases.atom` 完全正常。Atom 源是普通页面资源，不受该限额影响。
+
+### 实现要点（`data/AppUpdate.kt`）
+
+- 源按时间倒序，取第一个 `<entry>`；版本号从 `.../releases/tag/vX.Y.Z` 链接里取，不从标题里猜
+- 发布说明在源里是 **XML 转义过的 HTML**（`&lt;h2&gt;...`），先反转义再摘掉标签，才是弹窗里的纯文本
+- 超时 8 秒；失败给出「打开发布页」兜底，而不是只弹一个错误
+- 版本比较**按点分段做数值比较**（`1.0.10` 字符串比 `1.0.9` 小，版本上却更大）
 - 版本号格式看不懂时按"有更新"处理，把判断权交给用户，而不是默默说"已是最新"
+- 「去下载」打开的是 **release 页面**而不是拼接出来的 APK 直链 —— 源里没有附件地址，拼 URL 一旦资源改名就会 404
 
 ### 为什么 App 不自己下载安装
 
